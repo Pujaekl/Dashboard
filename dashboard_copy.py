@@ -817,7 +817,7 @@ if uploaded_file:
         plot_mean_metrics_bar_plotly(
             overall_cte_mean, filtered_cte_mean, sliced_cte_mean,
             overall_heading_mean, filtered_heading_mean, sliced_heading_mean),
-        width=True, theme=None)
+        use_container_width=True, theme=None)
     st.divider()
     
     # DISTRIBUTIONS    
@@ -838,14 +838,14 @@ if uploaded_file:
             overall_cte,
             "CTE Distribution",
             STAGE_COLORS["Overall"]["cte"])
-          st.plotly_chart(plot_distribution_plotly(overall_cte, "CTE Distribution", STAGE_COLORS["Overall"]["cte"]), width=True, theme=None)
+          st.plotly_chart(plot_distribution_plotly(overall_cte, "CTE Distribution", STAGE_COLORS["Overall"]["cte"]), use_container_width=True, theme=None)
 
         with col2:
           fig2 = plot_distribution(
             overall_heading,
             "Heading Error Distribution",
             STAGE_COLORS["Overall"]["heading"])
-          st.plotly_chart(plot_distribution_plotly(overall_heading, "Heading Error Distribution", STAGE_COLORS["Overall"]["heading"]), width=True, theme=None)
+          st.plotly_chart(plot_distribution_plotly(overall_heading, "Heading Error Distribution", STAGE_COLORS["Overall"]["heading"]), use_container_width=True, theme=None)
         
     with tabs[1]:
        st.markdown("## 🟡 Filtered Distribution")
@@ -856,7 +856,7 @@ if uploaded_file:
                 filtered_df["CTE"].dropna(),
                 "CTE Distribution (Filtered)",
                 STAGE_COLORS["Filtered"]["cte"])
-            st.plotly_chart(plot_distribution_plotly(filtered_df["CTE"].dropna(), "CTE Distribution (Filtered)", STAGE_COLORS["Filtered"]["cte"]), width=True, theme=None)
+            st.plotly_chart(plot_distribution_plotly(filtered_df["CTE"].dropna(), "CTE Distribution (Filtered)", STAGE_COLORS["Filtered"]["cte"]), use_container_width=True, theme=None)
         else:
             st.warning("No filtered CTE data")
 
@@ -866,7 +866,7 @@ if uploaded_file:
                 filtered_df["Heading error"].dropna(),
                 "Heading Error Distribution (Filtered)",
                 STAGE_COLORS["Filtered"]["heading"])
-            st.plotly_chart(plot_distribution_plotly(filtered_df["Heading error"].dropna(), "Heading Error Distribution (Filtered)", STAGE_COLORS["Filtered"]["heading"]), width=True, theme=None)
+            st.plotly_chart(plot_distribution_plotly(filtered_df["Heading error"].dropna(), "Heading Error Distribution (Filtered)", STAGE_COLORS["Filtered"]["heading"]), use_container_width=True, theme=None)
         else:
             st.warning("No filtered heading data")
         
@@ -879,7 +879,7 @@ if uploaded_file:
                 sliced_df["CTE"].dropna(),
                 "Sliced CTE Distribution",
                 STAGE_COLORS["Sliced"]["cte"])
-            st.plotly_chart(plot_distribution_plotly(sliced_df["CTE"].dropna(), "Sliced CTE Distribution", STAGE_COLORS["Sliced"]["cte"]), width=True, theme=None)
+            st.plotly_chart(plot_distribution_plotly(sliced_df["CTE"].dropna(), "Sliced CTE Distribution", STAGE_COLORS["Sliced"]["cte"]), use_container_width=True, theme=None)
           else:
             st.warning("No sliced CTE data available")
 
@@ -889,7 +889,7 @@ if uploaded_file:
                 sliced_df["Heading error"].dropna(),
                 "Sliced Heading Error Distribution",
                 STAGE_COLORS["Sliced"]["heading"])
-            st.plotly_chart(plot_distribution_plotly(sliced_df["Heading error"].dropna(), "Sliced Heading Error Distribution", STAGE_COLORS["Sliced"]["heading"]), width=True, theme=None)
+            st.plotly_chart(plot_distribution_plotly(sliced_df["Heading error"].dropna(), "Sliced Heading Error Distribution", STAGE_COLORS["Sliced"]["heading"]), use_container_width=True, theme=None)
           else:
             st.warning("No sliced heading data available")
     st.divider()
@@ -912,7 +912,7 @@ if uploaded_file:
                 segmented=False)
             st.plotly_chart(
                 plot_vehicle_path_plotly(df_clean, "Overall Vehicle Path", STAGE_COLORS["Overall"]["cte"], segmented=False),
-                width=True, theme=None)
+                use_container_width=True, theme=None)
 
         with col2:
 
@@ -939,7 +939,7 @@ if uploaded_file:
                 fig_filtered = plot_vehicle_path_matplotlib(filtered_df,"Filtered Vehicle Path",STAGE_COLORS["Filtered"]["cte"],segmented=True)
                 st.plotly_chart(
                     plot_vehicle_path_plotly(filtered_df, "Filtered Vehicle Path", STAGE_COLORS["Filtered"]["cte"], segmented=True),
-                    width=True, theme=None)
+                    use_container_width=True, theme=None)
 
             with col2:
                 filtered_map = create_folium_map(filtered_df,"Filtered Vehicle Path", STAGE_COLORS["Filtered"]["cte"],segmented=True)
@@ -960,7 +960,7 @@ if uploaded_file:
                 fig_sliced= plot_vehicle_path_matplotlib(sliced_plot_df, "Sliced vehicle path",STAGE_COLORS["Sliced"]["cte"],segmented=True)
                 st.plotly_chart(
                     plot_vehicle_path_plotly(sliced_plot_df, "Sliced Vehicle Path", STAGE_COLORS["Sliced"]["cte"], segmented=True),
-                    width=True, theme=None)
+                    use_container_width=True, theme=None)
 
             with col2:
                 sliced_map = create_folium_map(sliced_plot_df,"Sliced Vehicle Path",STAGE_COLORS["Sliced"]["cte"],segmented=True)
@@ -1006,13 +1006,13 @@ if uploaded_file:
             plot_cte_confidence_curve_plotly(
                 overall_conf, filtered_conf, sliced_conf,
                 df_clean["CTE"].dropna(), filtered_df["CTE"].dropna(), sliced_df["CTE"].dropna()),
-            width=True, theme=None)
+            use_container_width=True, theme=None)
         
     with g2:
         fig_req_curve = plot_required_cte_curve(overall_req,filtered_req,sliced_req)
         st.plotly_chart(
             plot_required_cte_curve_plotly(overall_req, filtered_req, sliced_req),
-            width=True, theme=None)
+            use_container_width=True, theme=None)
     st.divider()  
 # DOWNLOAD REPORT  
     st.subheader("⬇️ Export Analysis")
