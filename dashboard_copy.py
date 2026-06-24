@@ -9,6 +9,7 @@ import seaborn as sns
 import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from scipy import stats
 from scipy.stats import gaussian_kde
 from matplotlib.backends.backend_pdf import PdfPages
 import tempfile
@@ -188,14 +189,15 @@ def load_and_preprocess_log_data(uploaded_file):
             data.append(json.loads(m))
         except:
             pass
+    total_raw_records = len(data)
     df = pd.DataFrame(data)
-    numeric_cols = ['Latitude_A','Longitude_A','Latitude_B','Longitude_B','Latitude','Longitude','CTE','Heading error']
+    numeric_cols = ['Latitude_A','Longitude_A','Latitude_B','Longitude_B','Latitude','Longitude','CTE','Heading error','velocity','Heading']
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col],errors='coerce')
     df_clean = df.dropna(subset=['Latitude', 'Longitude'])
 
-    return df_clean
+    return df_clean, total_raw_records
     
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371.0
@@ -295,8 +297,8 @@ def analyze_checkpoints(df_clean,distance_threshold_m=35):
     return (filtered_checkpoints,all_ctes,all_headings,checkpoint_summary_df)
 
 def calculate_metrics(cte_values,heading_values,threshold=1):
-    mean_abs_cte = np.mean(np.abs(cte_values))
-    mean_abs_heading = np.mean(np.abs(heading_values))
+    mean_abs_cte = stats.mode(np.abs(cte_values), keepdims=True).mode[0]
+    mean_abs_heading = stats.mode(np.abs(heading_values), keepdims=True).mode[0]
     cte_conf = (len([x for x in cte_values if abs(x) <= threshold])/ len(cte_values)) * 100 if cte_values else 0
     heading_conf = (len([x for x in heading_values if abs(x) <= threshold])/ len(heading_values)) * 100 if heading_values else 0
     return (mean_abs_cte,mean_abs_heading,cte_conf,heading_conf)
@@ -322,8 +324,9 @@ def plot_distribution(data,title,color):
     fig, ax = plt.subplots(figsize=(8, 4))
     abs_data = np.abs(data)
     sns.kdeplot(abs_data,fill=True,color=color,bw_adjust=0.5,ax=ax)
-    mean_val = np.mean(abs_data)
-    ax.axvline(mean_val,color='red',linestyle='--',linewidth=2,label=f"Mean = {mean_val:.2f}")
+    mode_result = stats.mode(np.round(abs_data, 3), keepdims=True)
+    mode_val = float(mode_result.mode[0])
+    ax.axvline(mode_val,color='red',linestyle='--',linewidth=2,label=f"{mode_val:.2f}")
     ax.set_title(title)
     ax.grid(alpha=0.3)
     ax.legend()
@@ -486,82 +489,6 @@ def run_cte_analysis(cte_values):
         compute_cte_confidence_at_thresholds(cte_values, thresholds),
         compute_cte_for_confidence(cte_values, levels))
 
-# CTE CONFIDENCE PLOTS
-def plot_cte_confidence_curve(overall_df,filtered_df,sliced_df,overall_cte,filtered_cte,sliced_cte):
-    fig, ax = plt.subplots(figsize=(9,5))
-    ax.plot(
-        overall_df["Threshold (m)"],
-        overall_df["Confidence (%)"],
-        marker='o',
-        linewidth=2,
-        color=STAGE_COLORS["Overall"]["cte"],
-        label="Overall")
-    ax.plot(
-        filtered_df["Threshold (m)"],
-        filtered_df["Confidence (%)"],
-        marker='o',
-        linewidth=2,
-        color=STAGE_COLORS["Filtered"]["cte"],
-        label="Filtered")
-    ax.plot(
-        sliced_df["Threshold (m)"],
-        sliced_df["Confidence (%)"],
-        marker='o',
-        linewidth=2,
-        color=STAGE_COLORS["Sliced"]["cte"],
-        label="Sliced")
-    datasets = [
-        ("Overall", overall_cte, STAGE_COLORS["Overall"]["cte"]),
-        ("Filtered", filtered_cte, STAGE_COLORS["Filtered"]["cte"]),
-        ("Sliced", sliced_cte, STAGE_COLORS["Sliced"]["cte"])]
-
-    for name, data, color in datasets:
-        data = np.abs(np.array(data))
-        mu = np.mean(data)
-        sigma = np.std(data)      
-        ax.axvline(mu,color=color,linestyle='--',alpha=0.8)      
-        ax.axvspan( mu - sigma,mu + sigma,color=color,alpha=0.08)
-        ax.text(mu,8,f"μ={mu:.2f}\nσ={sigma:.2f}",rotation=90,color=color,fontsize=9,ha='center',va='bottom',fontweight='bold')
-    ax.set_title("CTE Threshold vs Confidence")
-    ax.set_xlabel("CTE Threshold (m)")
-    ax.set_ylabel("Confidence (%)")
-    #ax.set_ylim(0, 100)
-    ax.grid(alpha=0.3)
-    ax.legend()
-    return fig
-
-
-def plot_required_cte_curve(overall_df,filtered_df,sliced_df):
-    fig, ax = plt.subplots(figsize=(9,5))
-    ax.plot(
-        overall_df["Confidence (%)"],
-        overall_df["CTE Required (m)"],
-        marker='o',
-        linewidth=2,
-        color=STAGE_COLORS["Overall"]["cte"],
-        label="Overall")
-    ax.plot(
-        filtered_df["Confidence (%)"],
-        filtered_df["CTE Required (m)"],
-        marker='o',
-        linewidth=2,
-        color=STAGE_COLORS["Filtered"]["cte"],
-        label="Filtered" )
-
-    ax.plot(
-        sliced_df["Confidence (%)"],
-        sliced_df["CTE Required (m)"],
-        marker='o',
-        linewidth=2,
-        color=STAGE_COLORS["Sliced"]["cte"],
-        label="Sliced")
-
-    ax.set_title("Confidence vs Required CTE")
-    ax.set_xlabel("Confidence (%)")
-    ax.set_ylabel("Required CTE (m)")
-    ax.grid(alpha=0.3)
-    ax.legend()
-    return fig
 
 PLOTLY_FONT = dict(family="Inter, -apple-system, sans-serif", color=COLORS["charcoal"])
 
@@ -591,9 +518,16 @@ def plot_distribution_plotly(data, title, color):
             x=xs, y=ys, mode="lines", line=dict(color=color, width=2.5),
             fill="tozeroy", fillcolor=_hex_to_rgba(color, 0.18),
             hovertemplate="Value: %{x:.3f}<br>Density: %{y:.3f}<extra></extra>", showlegend=False))
-    mean_val = float(np.mean(abs_data)) if len(abs_data) else 0.0
-    fig.add_vline(x=mean_val, line_dash="dash", line_color=COLORS["orange_dark"], line_width=2,
-                  annotation_text=f"Mean = {mean_val:.2f}", annotation_font_color=COLORS["charcoal"])
+    # Show mode (peak of KDE) instead of mean
+    if xs is not None and ys is not None:
+        mode_val = float(xs[np.argmax(ys)])
+    elif len(abs_data):
+        mode_result = stats.mode(np.round(abs_data, 3), keepdims=True)
+        mode_val = float(mode_result.mode[0])
+    else:
+        mode_val = 0.0
+    fig.add_vline(x=mode_val, line_dash="dash", line_color=COLORS["orange_dark"], line_width=2,
+                  annotation_text=f"{mode_val:.2f}", annotation_font_color=COLORS["charcoal"])
     fig.update_layout(title=title, height=340, margin=dict(l=40, r=20, t=50, b=40),
                        plot_bgcolor=COLORS["card"], paper_bgcolor=COLORS["card"], font=PLOTLY_FONT)
     fig.update_xaxes(gridcolor=COLORS["border"], zeroline=False, tickfont=dict(color=COLORS["charcoal"]))
@@ -677,8 +611,119 @@ def plot_required_cte_curve_plotly(overall_df, filtered_df, sliced_df):
     return fig
 
 
+def plot_velocity_chart_plotly(df, step=50):
+    if 'velocity' not in df.columns:
+        fig = go.Figure()
+        fig.add_annotation(text="No 'velocity' field found in log data", xref="paper", yref="paper",
+                           x=0.5, y=0.5, showarrow=False, font=dict(size=14))
+        fig.update_layout(title="Raw Velocity", height=360,
+                           plot_bgcolor=COLORS["card"], paper_bgcolor=COLORS["card"], font=PLOTLY_FONT)
+        return fig
+    df_v = df.dropna(subset=['velocity']).reset_index(drop=True)
+    if df_v.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="No velocity data available", xref="paper", yref="paper",
+                           x=0.5, y=0.5, showarrow=False, font=dict(size=14))
+        fig.update_layout(title="Raw Velocity", height=360,
+                           plot_bgcolor=COLORS["card"], paper_bgcolor=COLORS["card"], font=PLOTLY_FONT)
+        return fig
+    df_sampled = df_v.iloc[::step].reset_index(drop=True)
+    vel = df_sampled['velocity'].values
+    mean_vel = float(np.mean(df_v['velocity']))  
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df_sampled.index.tolist(), y=vel.tolist(), mode="lines",
+        line=dict(color=COLORS["orange"], width=1.5),
+        fill="tozeroy", fillcolor=_hex_to_rgba(COLORS["orange"], 0.12),
+        name="Velocity", hovertemplate="Sample %{x}: %{y:.4f}<extra></extra>"))
+    fig.add_hline(y=mean_vel, line_dash="dash", line_color=COLORS["amber_dark"], line_width=2,
+                  annotation_text=f"Mean = {mean_vel:.4f}", annotation_font_color=COLORS["charcoal"])
+    fig.update_layout(
+        title=f"Raw Velocity ",
+        height=360, margin=dict(l=40, r=20, t=55, b=40),
+        plot_bgcolor=COLORS["card"], paper_bgcolor=COLORS["card"], font=PLOTLY_FONT,
+        showlegend=False)
+    fig.update_xaxes(title=f" Data ", gridcolor=COLORS["border"], zeroline=False, tickfont=dict(color=COLORS["charcoal"]))
+    fig.update_yaxes(title="Velocity", gridcolor=COLORS["border"], zeroline=False, tickfont=dict(color=COLORS["charcoal"]))
+    return fig
+
+def plot_heading_error_chart_plotly(df, step=50):
+    df_h = df.dropna(subset=['Heading error']).reset_index(drop=True)
+    if df_h.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="No heading error data", xref="paper", yref="paper",
+                           x=0.5, y=0.5, showarrow=False, font=dict(size=14))
+        fig.update_layout(title="Heading Error Over Record Index", height=360,
+                           plot_bgcolor=COLORS["card"], paper_bgcolor=COLORS["card"], font=PLOTLY_FONT)
+        return fig
+    mean_he = float(np.mean(df_h['Heading error']))  
+    df_sampled = df_h.iloc[::step].reset_index(drop=True)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df_sampled.index.tolist(), y=df_sampled['Heading error'].tolist(), mode="lines",
+        line=dict(color=COLORS["charcoal"], width=1.2),
+        fill="tozeroy", fillcolor=_hex_to_rgba(COLORS["steel"], 0.10),
+        name="Heading Error (°)", hovertemplate="Sample %{x}: %{y:.2f}°<extra></extra>"))
+    fig.add_hline(y=0, line_color=COLORS["steel"], line_width=0.8)
+    fig.add_hline(y=mean_he, line_dash="dash", line_color=COLORS["orange"], line_width=2,
+                  annotation_text=f"Mean = {mean_he:.2f}°", annotation_font_color=COLORS["charcoal"])
+    fig.update_layout(
+        title=f" Heading Error ",
+        height=360, margin=dict(l=40, r=20, t=55, b=40),
+        plot_bgcolor=COLORS["card"], paper_bgcolor=COLORS["card"], font=PLOTLY_FONT,
+        showlegend=False)
+    fig.update_xaxes(title=f" Data ", gridcolor=COLORS["border"], zeroline=False, tickfont=dict(color=COLORS["charcoal"]))
+    fig.update_yaxes(title="Heading Error (°)", gridcolor=COLORS["border"], zeroline=False, tickfont=dict(color=COLORS["charcoal"]))
+    return fig
+
+# PDF REPORT HELPER CHARTS
+def plot_velocity_chart(df):
+    """Plot raw velocity from the log data."""
+    fig, ax = plt.subplots(figsize=(11, 4))
+    if 'velocity' not in df.columns:
+        ax.text(0.5, 0.5, "No 'velocity' field found in log data", ha='center', va='center', transform=ax.transAxes)
+        ax.set_title("Raw Velocity")
+        return fig
+    df_v = df.dropna(subset=['velocity']).reset_index(drop=True)
+    if df_v.empty:
+        ax.text(0.5, 0.5, "No velocity data available", ha='center', va='center', transform=ax.transAxes)
+        ax.set_title("Raw Velocity")
+        return fig
+    vel = df_v['velocity'].values
+    ax.plot(range(len(vel)), vel, color=COLORS["orange"], linewidth=1.2, alpha=0.85)
+    ax.axhline(np.mean(vel), color=COLORS["amber_dark"], linestyle='--', linewidth=1.5,
+               label=f"Mean = {np.mean(vel):.4f}")
+    ax.set_title("Raw Velocity", fontweight='bold')
+    ax.set_xlabel("Record Index")
+    ax.set_ylabel("Velocity")
+    ax.legend()
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    return fig
+
+def plot_heading_error_chart(df):
+    """Plot heading error over record index."""
+    fig, ax = plt.subplots(figsize=(11, 4))
+    df_h = df.dropna(subset=['Heading error']).reset_index(drop=True)
+    if df_h.empty:
+        ax.text(0.5, 0.5, "No heading error data", ha='center', va='center', transform=ax.transAxes)
+        ax.set_title("Heading Error Over Time")
+        return fig
+    ax.plot(df_h.index, df_h['Heading error'].values, color=COLORS["charcoal"], linewidth=1.0, alpha=0.75)
+    ax.axhline(0, color=COLORS["steel"], linestyle='-', linewidth=0.8)
+    mean_he = float(np.mean(df_h['Heading error']))
+    ax.axhline(mean_he, color=COLORS["orange"], linestyle='--', linewidth=1.5,
+               label=f"Mean = {mean_he:.2f}°")
+    ax.set_title("Heading Error Over Record Index", fontweight='bold')
+    ax.set_xlabel("Record Index")
+    ax.set_ylabel("Heading Error (°)")
+    ax.legend()
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    return fig
+
 # PDF REPORT GENERATOR
-def generate_pdf_report(metrics_fig, fig1, fig2, fig3, fig4, fig5, fig6,fig_conf_curve, fig_req_curve, fig_overall, fig_filtered, fig_sliced,report_df ):
+def generate_pdf_report(metrics_fig, fig1, fig2, fig3, fig4, fig5, fig6, fig_overall, fig_filtered, fig_sliced, report_df, fig_velocity=None, fig_heading_error=None):
     temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
 
     with PdfPages(temp_pdf.name) as pdf:
@@ -689,8 +734,8 @@ def generate_pdf_report(metrics_fig, fig1, fig2, fig3, fig4, fig5, fig6,fig_conf
         pdf.savefig(cover_fig)
         plt.close(cover_fig)
 
-        figs = [metrics_fig, fig1, fig2, fig3, fig4, fig5, fig6, 
-                fig_conf_curve, fig_req_curve, fig_overall, fig_filtered, fig_sliced]
+        figs = [metrics_fig, fig_velocity, fig_heading_error, fig1, fig2, fig3, fig4, fig5, fig6, 
+                 fig_overall, fig_filtered, fig_sliced]
         
         for fig in figs:
             if fig is not None:
@@ -724,7 +769,7 @@ def generate_pdf_report(metrics_fig, fig1, fig2, fig3, fig4, fig5, fig6,fig_conf
 
 # MAIN DASHBOARD
 if uploaded_file:
-    df_clean = load_and_preprocess_log_data(uploaded_file)
+    df_clean, total_raw_records = load_and_preprocess_log_data(uploaded_file)
 
     initial_count = len(df_clean) 
     df_clean = remove_coordinate_outliers(df_clean, columns=['Latitude', 'Longitude'], method='iqr', factor=1.5)
@@ -758,12 +803,12 @@ if uploaded_file:
     sliced_df = get_sliced_path_data(filtered_df,filtered_checkpoints)
   
     # OVERALL METRICS
-    overall_cte_mean = np.mean(np.abs(df_clean['CTE'].dropna()))
-    overall_heading_mean = np.mean(np.abs(df_clean['Heading error'].dropna()))
-    filtered_cte_mean = np.mean(np.abs(filtered_df['CTE'].dropna())) if not filtered_df.empty else 0
-    filtered_heading_mean = np.mean(np.abs(filtered_df['Heading error'].dropna())) if not filtered_df.empty else 0
-    sliced_cte_mean = np.mean(np.abs( sliced_df['CTE'].dropna())) if not sliced_df.empty else 0
-    sliced_heading_mean = np.mean(np.abs( sliced_df['Heading error'].dropna())) if not sliced_df.empty else 0
+    overall_cte_mean = np.abs(np.mean(df_clean['CTE'].dropna()))
+    overall_heading_mean = np.abs(np.mean(df_clean['Heading error'].dropna()))
+    filtered_cte_mean = np.abs(np.mean(filtered_df['CTE'].dropna())) if not filtered_df.empty else 0
+    filtered_heading_mean = np.abs(np.mean(filtered_df['Heading error'].dropna())) if not filtered_df.empty else 0
+    sliced_cte_mean = np.abs(np.mean( sliced_df['CTE'].dropna())) if not sliced_df.empty else 0
+    sliced_heading_mean = np.abs(np.mean( sliced_df['Heading error'].dropna())) if not sliced_df.empty else 0
     overall_sin_theta = get_overall_sin_theta_metric(overall_heading_mean)
     sliced_sin_theta = get_sliced_sin_theta_metric(sliced_heading_mean)
 
@@ -772,32 +817,28 @@ if uploaded_file:
   
     # KPI METRICS   
     st.subheader("📌 Key Metrics")
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1, c2, c3, c4 = st.columns(4)
+
+    avg_cte = float(np.abs(np.mean(sliced_df['CTE'].dropna()))) if not sliced_df.empty else sliced_cte_mean
+    avg_heading = np.mean(np.abs( sliced_df['Heading error'].dropna())) if not sliced_df.empty else 0
+    total_checkpoints = len(filtered_checkpoints)
 
     with c1:
         st.metric(
-            "📏 Mean Abs CTE",
-            f"{sliced_cte_mean:.3f} m")
+            "📏 Avg CTE ",
+            f"{avg_cte:.3f} m")
     with c2:
         st.metric(
-            "🧭 Mean Heading Error",
-            f"{sliced_heading_mean:.3f}°")
+            "📏 Avg Heading Error ",
+            f"{avg_heading:.3f} deg")
     with c3:
         st.metric(
-            "🎯 CTE Confidence",
-            f"{confidence_cte:.2f}%")
+            "🔖 Total Checkpoints",
+            f"{total_checkpoints}")
     with c4:
         st.metric(
-            "🎯 Heading Confidence",
-            f"{confidence_heading:.2f}%")
-    with c5:
-        st.metric(
-            "📐 Overall Sin(θ) × 2.26",
-            f"{overall_sin_theta:.4f}")
-    with c6:
-        st.metric(
-            "📐 Sliced Sin(θ) × 2.26",
-            f"{sliced_sin_theta:.4f}")
+            "🗂️ Total Records",
+            f"{total_raw_records:,}")
 
     st.divider()
 
@@ -968,52 +1009,16 @@ if uploaded_file:
         else:
             st.warning("No sliced data available.")
     st.divider()
-   
-    # CTE CONFIDENCE UI
-    st.subheader("📊 CTE Confidence Analysis (Overall / Filtered / Sliced)")
-    col1,col2,col3 = st.columns(3)
 
-    with col1:
-        st.markdown("### Overall")
-        st.dataframe(overall_conf, width='stretch')
-        st.dataframe(overall_req, width='stretch')
-
-    with col2:
-        st.markdown("### Filtered")
-        st.dataframe(filtered_conf, width='stretch')
-        st.dataframe(filtered_req, width='stretch')
-
-    with col3:
-        st.markdown("### Sliced")
-        st.dataframe(sliced_conf, width='stretch')
-        st.dataframe(sliced_req, width='stretch')
-    
+    # VELOCITY & HEADING ERROR CHARTS
+    st.subheader("📡 Velocity & Heading Error")
+    vcol1, vcol2 = st.columns(2)
+    with vcol1:
+        st.plotly_chart(plot_velocity_chart_plotly(df_clean, step=20), use_container_width=True, theme=None)
+    with vcol2:
+        st.plotly_chart(plot_heading_error_chart_plotly(df_clean, step=20), use_container_width=True, theme=None)
     st.divider()
 
-# CTE CONFIDENCE GRAPHS    
-    st.subheader("📈 CTE Confidence Curves")
-    g1, g2 = st.columns(2)
-
-    with g1:
-        fig_conf_curve = plot_cte_confidence_curve(
-            overall_conf,
-            filtered_conf,
-            sliced_conf,
-            df_clean["CTE"].dropna(),
-            filtered_df["CTE"].dropna(),
-            sliced_df["CTE"].dropna())
-        st.plotly_chart(
-            plot_cte_confidence_curve_plotly(
-                overall_conf, filtered_conf, sliced_conf,
-                df_clean["CTE"].dropna(), filtered_df["CTE"].dropna(), sliced_df["CTE"].dropna()),
-            use_container_width=True, theme=None)
-        
-    with g2:
-        fig_req_curve = plot_required_cte_curve(overall_req,filtered_req,sliced_req)
-        st.plotly_chart(
-            plot_required_cte_curve_plotly(overall_req, filtered_req, sliced_req),
-            use_container_width=True, theme=None)
-    st.divider()  
 # DOWNLOAD REPORT  
     st.subheader("⬇️ Export Analysis")
     report_df = pd.DataFrame([{
@@ -1027,6 +1032,9 @@ if uploaded_file:
         "Sliced Mean Heading Error": sliced_heading_mean,
         "CTE Confidence": confidence_cte,
         "Heading Confidence": confidence_heading}])
+    fig_velocity = plot_velocity_chart(df_clean)
+    fig_heading_error_chart = plot_heading_error_chart(df_clean)
+
  # GENERATE PDF REPORT
     pdf_path = generate_pdf_report(
         metrics_fig,
@@ -1036,12 +1044,12 @@ if uploaded_file:
         fig4,
         fig5,
         fig6,
-        fig_conf_curve,
-        fig_req_curve,
         fig_overall,
         fig_filtered,
         fig_sliced,
-        report_df)
+        report_df,
+        fig_velocity=fig_velocity,
+        fig_heading_error=fig_heading_error_chart)
     csv = report_df.to_csv(index=False).encode("utf-8")
     with open(pdf_path, "rb") as pdf_file:
         st.download_button(
